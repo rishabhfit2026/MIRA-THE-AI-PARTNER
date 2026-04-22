@@ -16,3 +16,6 @@ def get_openai_api_key() -> str | None:
 def get_model() -> str:
     return os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 
+
+def get_realtime_model() -> str:
+    return os.getenv("OPENAI_REALTIME_MODEL", "gpt-realtime")

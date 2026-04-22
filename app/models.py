@@ -12,6 +12,7 @@ ReminderType = Literal["wake", "meal", "sleep", "medicine", "hydration", "exerci
 class AssistantProfile(BaseModel):
     name: str = "Rishabh"
     assistant_name: str = "Mira"
+    nickname_for_user: str = "Rishabh"
     voice: str = "Google UK English Female"
     wake_time: str = "07:00"
     sleep_time: str = "23:00"
@@ -22,6 +23,11 @@ class AssistantProfile(BaseModel):
     exercise_time: str = "18:30"
     health_goal: str = "Stay consistent with sleep, meals, hydration, and general energy."
     timezone: str = "Asia/Kolkata"
+    relationship_mode: str = "close friend"
+    tone_style: str = "warm and playful"
+    comfort_style: str = "gentle reassurance with honest nudges"
+    affection_level: int = 7
+    memory_notes: str = "Treat me like a trusted friend who cares deeply and checks in naturally."
 
 
 class Reminder(BaseModel):
@@ -67,6 +73,7 @@ class ChatResponse(BaseModel):
 class ProfileUpdate(BaseModel):
     name: str
     assistant_name: str
+    nickname_for_user: str
     wake_time: str
     sleep_time: str
     breakfast_time: str
@@ -76,6 +83,11 @@ class ProfileUpdate(BaseModel):
     exercise_time: str
     health_goal: str
     timezone: str
+    relationship_mode: str
+    tone_style: str
+    comfort_style: str
+    affection_level: int
+    memory_notes: str
 
 
 class ReminderPayload(BaseModel):
@@ -91,3 +103,7 @@ class CheckinPayload(BaseModel):
     mood: str = "okay"
     notes: str = ""
 
+
+class RealtimeSessionRequest(BaseModel):
+    voice: str = "marin"
+    language_mode: str = "en-IN"

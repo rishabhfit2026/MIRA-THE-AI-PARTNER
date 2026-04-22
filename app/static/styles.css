@@ -145,9 +145,19 @@ button:hover {
   transform: translateY(-1px);
 }
 
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
 .primary {
   background: var(--accent);
   color: white;
+}
+
+.primary.active {
+  background: var(--accent-strong);
 }
 
 .secondary,

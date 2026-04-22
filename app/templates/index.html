@@ -13,13 +13,12 @@
         <p class="eyebrow">Voice Health Assistant</p>
         <h1 id="assistant-title">{{ profile.assistant_name }}</h1>
         <p class="lede">
-          A routine-focused AI companion for sleep, meals, exercise, hydration, and check-ins.
-          Speak to her naturally. She listens in the browser and talks back with your device voice.
+          A voice-first AI partner that should feel like a real friend: warm, emotionally present,
+          helpful with your routines, and natural in English, Hindi, or Hinglish.
         </p>
         <div class="hero-actions">
-          <button id="voiceModeButton" class="primary">Start Voice Mode</button>
-          <button id="micButton" class="secondary">Single Message</button>
-          <button id="stopSpeakButton" class="secondary">Stop Voice</button>
+          <button id="voiceModeButton" class="primary">Start Live Voice</button>
+          <button id="stopSpeakButton" class="secondary">End Session</button>
         </div>
         <div class="voice-controls">
           <label>
@@ -30,11 +29,22 @@
               <option value="en-US">English US</option>
             </select>
           </label>
+          <label>
+            Realtime Voice
+            <select id="voiceSelect">
+              <option value="marin">Marin</option>
+              <option value="cedar">Cedar</option>
+              <option value="ash">Ash</option>
+              <option value="coral">Coral</option>
+              <option value="sage">Sage</option>
+              <option value="verse">Verse</option>
+            </select>
+          </label>
           <p class="voice-note">
-            For mixed Hindi-English speech, start with <strong>English India</strong>. Chrome usually handles Hinglish better there.
+            For mixed Hindi-English speech, start with <strong>English India</strong>. This live mode uses OpenAI Realtime voice instead of browser speech, so it should feel much more natural.
           </p>
         </div>
-        <p id="statusLine" class="status">Microphone idle.</p>
+        <p id="statusLine" class="status">Live voice is disconnected.</p>
       </div>
       <div class="hero-card">
         <p class="card-label">Today</p>
@@ -47,22 +57,28 @@
       <div class="panel">
         <div class="panel-head">
           <h2>Conversation</h2>
-          <button id="speakLastButton" class="ghost">Speak Last Reply</button>
+          <button id="speakLastButton" class="ghost">Send Typed Prompt Live</button>
         </div>
         <div id="chatLog" class="chat-log"></div>
         <form id="chatForm" class="chat-form">
-          <input id="chatInput" type="text" placeholder="Say or type: set my sleep time to 22:30" />
+          <input id="chatInput" type="text" placeholder="Type here if you want to send a live prompt during the voice session" />
           <button class="primary" type="submit">Send</button>
         </form>
       </div>
 
       <div class="panel">
         <div class="panel-head">
-          <h2>Routine</h2>
+          <h2>Bond Settings</h2>
         </div>
         <form id="profileForm" class="stack-form">
           <label>Name<input name="name" type="text" required /></label>
+          <label>Nickname She Uses For You<input name="nickname_for_user" type="text" required /></label>
           <label>Assistant Name<input name="assistant_name" type="text" required /></label>
+          <label>Relationship Mode<input name="relationship_mode" type="text" placeholder="close friend" required /></label>
+          <label>Tone Style<input name="tone_style" type="text" placeholder="warm and playful" required /></label>
+          <label>Comfort Style<input name="comfort_style" type="text" placeholder="gentle reassurance with honest nudges" required /></label>
+          <label>Affection Level 1-10<input name="affection_level" type="number" min="1" max="10" required /></label>
+          <label>What She Should Remember About You<textarea name="memory_notes" rows="3" placeholder="How you want MIRA to treat you emotionally"></textarea></label>
           <label>Wake Time<input name="wake_time" type="time" required /></label>
           <label>Sleep Time<input name="sleep_time" type="time" required /></label>
           <label>Breakfast<input name="breakfast_time" type="time" required /></label>

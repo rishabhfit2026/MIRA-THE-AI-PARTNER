@@ -1,14 +1,15 @@
 const state = {
   current: null,
   lastReply: "",
-  recognition: null,
-  listening: false,
-  voiceMode: false,
-  speaking: false,
-  manualStop: false,
-  queuedTranscript: "",
-  transcriptTimer: null,
-  selectedLanguage: "en-IN",
+  realtime: {
+    connected: false,
+    connecting: false,
+    pc: null,
+    dc: null,
+    stream: null,
+    audioEl: null,
+  },
+  draftMessages: new Map(),
 };
 
 const chatLog = document.getElementById("chatLog");
@@ -21,12 +22,12 @@ const reminderList = document.getElementById("reminderList");
 const checkinSummary = document.getElementById("checkinSummary");
 const todayPlan = document.getElementById("todayPlan");
 const statusLine = document.getElementById("statusLine");
-const micButton = document.getElementById("micButton");
 const voiceModeButton = document.getElementById("voiceModeButton");
 const speakLastButton = document.getElementById("speakLastButton");
 const stopSpeakButton = document.getElementById("stopSpeakButton");
 const assistantTitle = document.getElementById("assistant-title");
 const languageMode = document.getElementById("languageMode");
+const voiceSelect = document.getElementById("voiceSelect");
 
 function renderMessage(role, content) {
   const item = document.createElement("div");
@@ -34,6 +35,51 @@ function renderMessage(role, content) {
   item.textContent = content;
   chatLog.appendChild(item);
   chatLog.scrollTop = chatLog.scrollHeight;
+  return item;
+}
+
+function upsertDraftMessage(key, role, content) {
+  if (!content) {
+    return;
+  }
+
+  let item = state.draftMessages.get(key);
+  if (!item) {
+    item = document.createElement("div");
+    item.className = `message ${role}`;
+    item.dataset.draft = key;
+    chatLog.appendChild(item);
+    state.draftMessages.set(key, item);
+  }
+
+  item.textContent = content;
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function finalizeDraftMessage(key, role, content) {
+  const item = state.draftMessages.get(key);
+  if (item) {
+    item.className = `message ${role}`;
+    item.removeAttribute("data-draft");
+    item.textContent = content || item.textContent;
+    state.draftMessages.delete(key);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return;
+  }
+
+  if (content) {
+    renderMessage(role, content);
+  }
+}
+
+function removeDraftMessage(key) {
+  const item = state.draftMessages.get(key);
+  if (!item) {
+    return;
+  }
+
+  item.remove();
+  state.draftMessages.delete(key);
 }
 
 function fillProfile(profile) {
@@ -53,6 +99,7 @@ function renderState(appState) {
   todayPlan.innerHTML = "";
   checkinSummary.innerHTML = "";
   chatLog.innerHTML = "";
+  state.draftMessages.clear();
 
   appState.chat_history.forEach((msg) => {
     if (msg.role !== "system") {
@@ -66,19 +113,18 @@ function renderState(appState) {
     .forEach((item) => {
       const chip = document.createElement("div");
       chip.className = "chip";
-      chip.textContent = `${item.time}  ${item.label} (${item.kind})`;
+      chip.textContent = `${item.time} ${item.label} (${item.kind})`;
       reminderList.appendChild(chip);
     });
 
-  const planItems = [
+  [
     `Wake at ${appState.profile.wake_time}`,
     `Breakfast at ${appState.profile.breakfast_time}`,
     `Lunch at ${appState.profile.lunch_time}`,
     `Exercise at ${appState.profile.exercise_time}`,
     `Dinner at ${appState.profile.dinner_time}`,
     `Sleep by ${appState.profile.sleep_time}`,
-  ];
-  planItems.forEach((text) => {
+  ].forEach((text) => {
     const chip = document.createElement("div");
     chip.className = "chip";
     chip.textContent = text;
@@ -111,217 +157,283 @@ function updateStatus(text) {
 }
 
 function updateVoiceButtons() {
-  voiceModeButton.textContent = state.voiceMode ? "Stop Voice Mode" : "Start Voice Mode";
-  voiceModeButton.classList.toggle("active", state.voiceMode);
-  micButton.disabled = state.voiceMode;
-}
-
-function applyRecognitionLanguage() {
-  state.selectedLanguage = languageMode.value;
-  if (state.recognition) {
-    state.recognition.lang = state.selectedLanguage;
-  }
-}
-
-function clearTranscriptTimer() {
-  if (!state.transcriptTimer) {
-    return;
-  }
-  window.clearTimeout(state.transcriptTimer);
-  state.transcriptTimer = null;
-}
-
-function scheduleQueuedTranscript() {
-  clearTranscriptTimer();
-  state.transcriptTimer = window.setTimeout(async () => {
-    const content = state.queuedTranscript.trim();
-    state.queuedTranscript = "";
-    if (!content) {
-      return;
-    }
-    chatInput.value = content;
-    await sendMessage(content);
-  }, 900);
-}
-
-function pickVoice(text) {
-  const voices = window.speechSynthesis.getVoices();
-  const wantHindi = /[\u0900-\u097F]/.test(text) || state.selectedLanguage === "hi-IN";
-
-  if (wantHindi) {
-    return (
-      voices.find((voice) => /hi[-_]?IN|hindi/i.test(voice.lang) || /hindi/i.test(voice.name)) ||
-      voices.find((voice) => /india/i.test(voice.name))
-    );
-  }
-
-  return (
-    voices.find((voice) =>
-      /en[-_]?IN/i.test(voice.lang) || /india|female|zira|samantha|google uk english female/i.test(voice.name)
-    ) ||
-    voices.find((voice) => /en/i.test(voice.lang))
-  );
-}
-
-function startRecognition() {
-  if (!state.recognition || state.listening || state.speaking) {
+  if (state.realtime.connected) {
+    voiceModeButton.textContent = "Live Voice Connected";
+    voiceModeButton.classList.add("active");
+    stopSpeakButton.disabled = false;
+    speakLastButton.disabled = false;
     return;
   }
 
-  applyRecognitionLanguage();
-  state.manualStop = false;
-  try {
-    state.recognition.start();
-  } catch (error) {
-    if (!String(error).includes("start")) {
-      console.error(error);
-    }
-  }
-}
-
-function stopRecognition(manual = false) {
-  if (!state.recognition || !state.listening) {
-    state.manualStop = manual;
+  if (state.realtime.connecting) {
+    voiceModeButton.textContent = "Connecting...";
+    voiceModeButton.classList.add("active");
+    stopSpeakButton.disabled = true;
+    speakLastButton.disabled = true;
     return;
   }
 
-  state.manualStop = manual;
-  state.recognition.stop();
+  voiceModeButton.textContent = "Start Live Voice";
+  voiceModeButton.classList.remove("active");
+  stopSpeakButton.disabled = true;
+  speakLastButton.disabled = true;
 }
 
-function startVoiceMode() {
-  state.voiceMode = true;
-  state.queuedTranscript = "";
-  clearTranscriptTimer();
+function closeRealtimeResources() {
+  const { dc, pc, stream, audioEl } = state.realtime;
+
+  if (dc) {
+    dc.close();
+  }
+
+  if (pc) {
+    pc.getSenders().forEach((sender) => sender.track?.stop());
+    pc.close();
+  }
+
+  if (stream) {
+    stream.getTracks().forEach((track) => track.stop());
+  }
+
+  if (audioEl) {
+    audioEl.pause();
+    audioEl.srcObject = null;
+  }
+
+  state.realtime = {
+    connected: false,
+    connecting: false,
+    pc: null,
+    dc: null,
+    stream: null,
+    audioEl: null,
+  };
   updateVoiceButtons();
-  updateStatus("Voice mode is on. Speak in English, Hindi, or mixed Hinglish.");
-  startRecognition();
 }
 
-function stopVoiceMode() {
-  state.voiceMode = false;
-  state.queuedTranscript = "";
-  clearTranscriptTimer();
-  stopRecognition(true);
-  updateVoiceButtons();
-  updateStatus("Voice mode stopped.");
+function stopRealtimeSession(reason = "Live voice disconnected.") {
+  closeRealtimeResources();
+  updateStatus(reason);
 }
 
-function speak(text) {
+function getEventText(event) {
+  if (typeof event.transcript === "string" && event.transcript.trim()) {
+    return event.transcript.trim();
+  }
+  if (typeof event.delta === "string" && event.delta.trim()) {
+    return event.delta;
+  }
+  if (typeof event.text === "string" && event.text.trim()) {
+    return event.text;
+  }
+  if (typeof event?.item?.formatted?.transcript === "string" && event.item.formatted.transcript.trim()) {
+    return event.item.formatted.transcript.trim();
+  }
+  if (typeof event?.response?.output_text === "string" && event.response.output_text.trim()) {
+    return event.response.output_text.trim();
+  }
+  return "";
+}
+
+function appendAssistantDelta(text) {
   if (!text) {
     return;
   }
-
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  const chosenVoice = pickVoice(text);
-
-  if (chosenVoice) {
-    utterance.voice = chosenVoice;
-    utterance.lang = chosenVoice.lang;
-  } else {
-    utterance.lang = state.selectedLanguage;
-  }
-
-  utterance.rate = 1;
-  utterance.pitch = 1;
-  utterance.onstart = () => {
-    state.speaking = true;
-    if (state.voiceMode) {
-      stopRecognition(false);
-      updateStatus("Speaking. I will listen again when I finish.");
-    }
-  };
-  utterance.onend = () => {
-    state.speaking = false;
-    if (state.voiceMode) {
-      updateStatus("Voice mode is on. I am listening again.");
-      window.setTimeout(() => startRecognition(), 250);
-    } else {
-      updateStatus("Microphone idle.");
-    }
-  };
-
-  window.speechSynthesis.speak(utterance);
+  state.lastReply = `${state.lastReply}${text}`;
+  upsertDraftMessage("assistant-live", "assistant", state.lastReply);
 }
 
-function setupVoiceRecognition() {
-  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Recognition) {
-    updateStatus("This browser does not support Web Speech recognition. Use Chrome.");
-    micButton.disabled = true;
-    voiceModeButton.disabled = true;
+function handleRealtimeEvent(event) {
+  switch (event.type) {
+    case "session.created":
+    case "session.updated":
+      updateStatus("Live voice connected. Talk normally and interrupt naturally.");
+      break;
+    case "input_audio_buffer.speech_started":
+      removeDraftMessage("user-live");
+      updateStatus("I am listening...");
+      break;
+    case "input_audio_buffer.speech_stopped":
+      updateStatus("I heard you. Let me respond.");
+      break;
+    case "conversation.item.input_audio_transcription.completed": {
+      const transcript = getEventText(event);
+      if (transcript) {
+        finalizeDraftMessage("user-live", "user", transcript);
+      }
+      break;
+    }
+    case "conversation.item.input_audio_transcription.delta": {
+      const delta = getEventText(event);
+      if (delta) {
+        const current = state.draftMessages.get("user-live")?.textContent || "";
+        upsertDraftMessage("user-live", "user", `${current}${delta}`.trim());
+      }
+      break;
+    }
+    case "response.audio_transcript.delta":
+    case "response.text.delta":
+    case "response.output_text.delta": {
+      appendAssistantDelta(getEventText(event));
+      break;
+    }
+    case "response.audio_transcript.done":
+    case "response.text.done":
+    case "response.output_text.done": {
+      const doneText = getEventText(event) || state.lastReply;
+      if (doneText) {
+        state.lastReply = doneText;
+        finalizeDraftMessage("assistant-live", "assistant", doneText);
+      }
+      break;
+    }
+    case "response.done":
+      if (state.lastReply) {
+        finalizeDraftMessage("assistant-live", "assistant", state.lastReply);
+      }
+      updateStatus("Live voice connected. Keep talking.");
+      break;
+    case "error":
+      updateStatus(`Realtime error: ${event.error?.message || "unknown error"}`);
+      break;
+    default:
+      break;
+  }
+}
+
+function setupDataChannel(dc) {
+  dc.addEventListener("open", () => {
+    state.realtime.connected = true;
+    state.realtime.connecting = false;
+    updateVoiceButtons();
+    updateStatus("Live voice connected. Talk normally and interrupt naturally.");
+  });
+
+  dc.addEventListener("close", () => {
+    if (state.realtime.connected || state.realtime.connecting) {
+      stopRealtimeSession("Live voice session ended.");
+    }
+  });
+
+  dc.addEventListener("message", (messageEvent) => {
+    try {
+      const event = JSON.parse(messageEvent.data);
+      handleRealtimeEvent(event);
+    } catch (error) {
+      console.error("Realtime event parse failed", error);
+    }
+  });
+}
+
+async function startRealtimeSession() {
+  if (state.realtime.connected || state.realtime.connecting) {
     return;
   }
 
-  const recognition = new Recognition();
-  recognition.lang = state.selectedLanguage;
-  recognition.interimResults = true;
-  recognition.continuous = true;
-  recognition.maxAlternatives = 1;
+  state.realtime.connecting = true;
+  updateVoiceButtons();
+  updateStatus("Creating secure live voice session...");
 
-  recognition.onstart = () => {
-    state.listening = true;
-    updateStatus(`Listening in ${languageMode.options[languageMode.selectedIndex].text}. Speak naturally.`);
-  };
+  try {
+    const tokenData = await getJson("/api/realtime/token", {
+      method: "POST",
+      body: JSON.stringify({
+        voice: voiceSelect.value,
+        language_mode: languageMode.value,
+      }),
+    });
 
-  recognition.onend = () => {
-    state.listening = false;
-    if (state.voiceMode && !state.speaking && !state.manualStop) {
-      updateStatus("Reconnecting voice mode...");
-      window.setTimeout(() => startRecognition(), 250);
-      return;
+    const ephemeralKey = tokenData.value;
+    if (!ephemeralKey) {
+      throw new Error("Realtime token response did not include a client secret.");
     }
 
-    if (!state.voiceMode) {
-      updateStatus("Microphone idle.");
-    }
-  };
-
-  recognition.onerror = (event) => {
-    if (event.error === "no-speech") {
-      if (!state.voiceMode) {
-        updateStatus("I did not hear anything. Try again.");
+    const pc = new RTCPeerConnection();
+    const audioEl = document.createElement("audio");
+    audioEl.autoplay = true;
+    pc.ontrack = (event) => {
+      audioEl.srcObject = event.streams[0];
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "connected") {
+        updateStatus("Live voice connected. Talk normally and interrupt naturally.");
       }
-      return;
-    }
-
-    if (event.error === "aborted") {
-      return;
-    }
-
-    updateStatus(`Voice input error: ${event.error}`);
-  };
-
-  recognition.onresult = (event) => {
-    let finalTranscript = "";
-    let interimTranscript = "";
-
-    for (let index = event.resultIndex; index < event.results.length; index += 1) {
-      const transcript = event.results[index][0].transcript.trim();
-      if (!transcript) {
-        continue;
+      if (["failed", "disconnected", "closed"].includes(pc.connectionState)) {
+        stopRealtimeSession(`Live voice ${pc.connectionState}.`);
       }
+    };
 
-      if (event.results[index].isFinal) {
-        finalTranscript += ` ${transcript}`;
-      } else {
-        interimTranscript += ` ${transcript}`;
-      }
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+    const dc = pc.createDataChannel("oai-events");
+    setupDataChannel(dc);
+
+    state.realtime = {
+      connected: false,
+      connecting: true,
+      pc,
+      dc,
+      stream,
+      audioEl,
+    };
+
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    const sdpResponse = await fetch("https://api.openai.com/v1/realtime/calls", {
+      method: "POST",
+      body: offer.sdp,
+      headers: {
+        Authorization: `Bearer ${ephemeralKey}`,
+        "Content-Type": "application/sdp",
+      },
+    });
+
+    if (!sdpResponse.ok) {
+      throw new Error(await sdpResponse.text());
     }
 
-    const preview = `${state.queuedTranscript} ${interimTranscript}`.trim();
-    if (preview) {
-      chatInput.value = preview;
-    }
+    await pc.setRemoteDescription({
+      type: "answer",
+      sdp: await sdpResponse.text(),
+    });
+  } catch (error) {
+    console.error(error);
+    stopRealtimeSession(`Live voice failed: ${error.message}`);
+  }
+}
 
-    if (finalTranscript.trim()) {
-      state.queuedTranscript = `${state.queuedTranscript} ${finalTranscript}`.trim();
-      scheduleQueuedTranscript();
-    }
-  };
+function sendRealtimeTextMessage(text) {
+  if (!state.realtime.connected || !state.realtime.dc) {
+    throw new Error("Live voice is not connected.");
+  }
 
-  state.recognition = recognition;
+  state.lastReply = "";
+  state.realtime.dc.send(
+    JSON.stringify({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text }],
+      },
+    }),
+  );
+  state.realtime.dc.send(
+    JSON.stringify({
+      type: "response.create",
+      response: {
+        output_modalities: ["audio", "text"],
+      },
+    }),
+  );
 }
 
 async function sendMessage(message) {
@@ -330,12 +442,17 @@ async function sendMessage(message) {
     return;
   }
 
-  clearTranscriptTimer();
-  state.queuedTranscript = "";
   chatInput.value = "";
   renderMessage("user", content);
-  updateStatus("Thinking about your reply...");
 
+  if (state.realtime.connected) {
+    state.lastReply = "";
+    updateStatus("Sending typed prompt into live voice...");
+    sendRealtimeTextMessage(content);
+    return;
+  }
+
+  updateStatus("Live voice is not connected, so this uses the fallback text assistant.");
   const data = await getJson("/api/chat", {
     method: "POST",
     body: JSON.stringify({ message: content }),
@@ -343,7 +460,6 @@ async function sendMessage(message) {
 
   state.lastReply = data.reply;
   renderState(data.state);
-  speak(data.reply);
 }
 
 chatForm.addEventListener("submit", async (event) => {
@@ -356,15 +472,19 @@ profileForm.addEventListener("submit", async (event) => {
   const formData = new FormData(profileForm);
   const payload = Object.fromEntries(formData.entries());
   payload.hydration_interval_minutes = Number(payload.hydration_interval_minutes);
+  payload.affection_level = Number(payload.affection_level);
   const updated = await getJson("/api/profile", {
     method: "POST",
     body: JSON.stringify(payload),
   });
   renderState(updated);
-  const reply = "Your routine has been updated. I will use this schedule for your reminders.";
-  state.lastReply = reply;
-  renderMessage("assistant", reply);
-  speak(reply);
+  renderMessage(
+    "assistant",
+    `I updated how I show up for you, ${updated.profile.nickname_for_user}. Reconnect live voice if you want the new tone immediately.`,
+  );
+  if (state.realtime.connected) {
+    updateStatus("Profile saved. End and restart live voice to apply the new personality instantly.");
+  }
 });
 
 reminderForm.addEventListener("submit", async (event) => {
@@ -388,53 +508,26 @@ checkinForm.addEventListener("submit", async (event) => {
     body: JSON.stringify(payload),
   });
   renderState(updated);
-  const reply = "Check-in saved. I will remember that in the next conversation.";
-  state.lastReply = reply;
-  renderMessage("assistant", reply);
-  speak(reply);
+  renderMessage("assistant", "Check-in saved. Restart live voice if you want MIRA to use that context right away.");
 });
 
-voiceModeButton.addEventListener("click", () => {
-  if (!state.recognition) {
+voiceModeButton.addEventListener("click", async () => {
+  if (state.realtime.connected || state.realtime.connecting) {
     return;
   }
-
-  if (state.voiceMode) {
-    stopVoiceMode();
-    return;
-  }
-
-  startVoiceMode();
+  await startRealtimeSession();
 });
 
-micButton.addEventListener("click", () => {
-  if (!state.recognition || state.voiceMode) {
+speakLastButton.addEventListener("click", async () => {
+  if (!chatInput.value.trim()) {
+    updateStatus("Type something in the input box first.");
     return;
   }
-
-  if (state.listening) {
-    stopRecognition(true);
-    return;
-  }
-
-  startRecognition();
+  await sendMessage(chatInput.value);
 });
 
-languageMode.addEventListener("change", () => {
-  applyRecognitionLanguage();
-  if (state.voiceMode) {
-    stopRecognition(false);
-    window.setTimeout(() => startRecognition(), 250);
-  }
-});
-
-speakLastButton.addEventListener("click", () => speak(state.lastReply));
 stopSpeakButton.addEventListener("click", () => {
-  window.speechSynthesis.cancel();
-  state.speaking = false;
-  if (state.voiceMode) {
-    window.setTimeout(() => startRecognition(), 200);
-  }
+  stopRealtimeSession("Live voice disconnected.");
 });
 
 async function pollReminders() {
@@ -445,10 +538,7 @@ async function pollReminders() {
     }
 
     data.items.forEach((item) => {
-      const message = `${state.current.profile.name}, ${item.label}.`;
-      renderMessage("assistant", message);
-      speak(message);
-      state.lastReply = message;
+      renderMessage("assistant", `${state.current.profile.nickname_for_user}, ${item.label}.`);
     });
   } catch (error) {
     console.error(error);
@@ -456,23 +546,16 @@ async function pollReminders() {
 }
 
 async function bootstrap() {
-  setupVoiceRecognition();
   updateVoiceButtons();
-
-  if (window.speechSynthesis) {
-    window.speechSynthesis.getVoices();
-    window.speechSynthesis.onvoiceschanged = () => {
-      window.speechSynthesis.getVoices();
-    };
-  }
 
   const appState = await getJson("/api/state");
   renderState(appState);
 
   if (!appState.chat_history.length) {
-    const intro = `Hi ${appState.profile.name}, I am ${appState.profile.assistant_name}. Start voice mode and talk to me in English, Hindi, or Hinglish.`;
-    renderMessage("assistant", intro);
-    state.lastReply = intro;
+    renderMessage(
+      "assistant",
+      `Hi ${appState.profile.nickname_for_user}. Start Live Voice to talk with me using OpenAI Realtime voice instead of browser speech.`,
+    );
   }
 
   setInterval(pollReminders, 30000);
