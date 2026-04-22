@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ profile.assistant_name }} | Health Voice Assistant</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Voice Health Assistant</p>
+        <h1 id="assistant-title">{{ profile.assistant_name }}</h1>
+        <p class="lede">
+          A routine-focused AI companion for sleep, meals, exercise, hydration, and check-ins.
+          Speak to her naturally. She listens in the browser and talks back with your device voice.
+        </p>
+        <div class="hero-actions">
+          <button id="voiceModeButton" class="primary">Start Voice Mode</button>
+          <button id="micButton" class="secondary">Single Message</button>
+          <button id="stopSpeakButton" class="secondary">Stop Voice</button>
+        </div>
+        <div class="voice-controls">
+          <label>
+            Language Mode
+            <select id="languageMode">
+              <option value="en-IN">English India</option>
+              <option value="hi-IN">Hindi</option>
+              <option value="en-US">English US</option>
+            </select>
+          </label>
+          <p class="voice-note">
+            For mixed Hindi-English speech, start with <strong>English India</strong>. Chrome usually handles Hinglish better there.
+          </p>
+        </div>
+        <p id="statusLine" class="status">Microphone idle.</p>
+      </div>
+      <div class="hero-card">
+        <p class="card-label">Today</p>
+        <p class="card-date">{{ today }}</p>
+        <div id="todayPlan" class="plan"></div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Conversation</h2>
+          <button id="speakLastButton" class="ghost">Speak Last Reply</button>
+        </div>
+        <div id="chatLog" class="chat-log"></div>
+        <form id="chatForm" class="chat-form">
+          <input id="chatInput" type="text" placeholder="Say or type: set my sleep time to 22:30" />
+          <button class="primary" type="submit">Send</button>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Routine</h2>
+        </div>
+        <form id="profileForm" class="stack-form">
+          <label>Name<input name="name" type="text" required /></label>
+          <label>Assistant Name<input name="assistant_name" type="text" required /></label>
+          <label>Wake Time<input name="wake_time" type="time" required /></label>
+          <label>Sleep Time<input name="sleep_time" type="time" required /></label>
+          <label>Breakfast<input name="breakfast_time" type="time" required /></label>
+          <label>Lunch<input name="lunch_time" type="time" required /></label>
+          <label>Dinner<input name="dinner_time" type="time" required /></label>
+          <label>Exercise<input name="exercise_time" type="time" required /></label>
+          <label>Hydration Interval (minutes)<input name="hydration_interval_minutes" type="number" min="15" max="360" required /></label>
+          <label>Timezone<input name="timezone" type="text" required /></label>
+          <label>Health Goal<textarea name="health_goal" rows="3"></textarea></label>
+          <button class="primary" type="submit">Save Routine</button>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Custom Reminder</h2>
+        </div>
+        <form id="reminderForm" class="stack-form">
+          <label>Reminder Label<input name="label" type="text" placeholder="Take vitamins" required /></label>
+          <label>Time<input name="time" type="time" required /></label>
+          <label>Type
+            <select name="kind">
+              <option value="custom">Custom</option>
+              <option value="medicine">Medicine</option>
+              <option value="meal">Meal</option>
+              <option value="hydration">Hydration</option>
+              <option value="exercise">Exercise</option>
+            </select>
+          </label>
+          <button class="primary" type="submit">Add Reminder</button>
+        </form>
+        <div id="reminderList" class="reminders"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Daily Check-In</h2>
+        </div>
+        <form id="checkinForm" class="stack-form">
+          <label>Sleep Hours<input name="sleep_hours" type="number" step="0.5" min="0" max="24" /></label>
+          <label>Water Glasses<input name="water_glasses" type="number" min="0" max="30" value="0" required /></label>
+          <label>Mood
+            <select name="mood">
+              <option value="great">Great</option>
+              <option value="good">Good</option>
+              <option value="okay" selected>Okay</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+          <label>Notes<textarea name="notes" rows="3" placeholder="Anything about your energy, stress, or body today"></textarea></label>
+          <button class="primary" type="submit">Save Check-In</button>
+        </form>
+        <div id="checkinSummary" class="checkins"></div>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
